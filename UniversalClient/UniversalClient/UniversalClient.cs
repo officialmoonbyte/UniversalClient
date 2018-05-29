@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Indiegoat.Encryption;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -31,6 +32,7 @@ namespace IndieGoat.Net.Tcp
             { try { if (Client.Connected) { return true; }
                 else { return false; } } catch { return false; } }}
         public prvClientSender ClientSender;
+        public Encryption localEncryption;
 
         #endregion
 
@@ -43,6 +45,7 @@ namespace IndieGoat.Net.Tcp
         {
             Client = new TcpClient();
             ClientSender = new prvClientSender();
+            localEncryption = new Encryption();
         }
 
         #endregion
@@ -74,6 +77,24 @@ namespace IndieGoat.Net.Tcp
 
             //Sets the client sender tcp client
             ClientSender.client = Client;
+            ClientSender._localEncryption = localEncryption;
+
+            Console.WriteLine("Getting server public key...");
+
+            string ServerPublicKey = ClientSender.WaitForResult();
+            localEncryption.SetPublicKey(ServerPublicKey);
+
+            Console.WriteLine("Got server public key.");
+
+            Console.WriteLine("Sending private key");
+
+            string KeyPackage = localEncryption.GetPrivateKey();
+            ClientSender.SendMessage(KeyPackage);
+
+            Console.WriteLine("Sent private key.. Waiting for server to be ready");
+            string readyMessage = ClientSender.WaitForResult();
+
+            if (readyMessage == "ready") Console.WriteLine("Server is ready!");
         }
 
         #endregion
@@ -97,6 +118,7 @@ namespace IndieGoat.Net.Tcp
             #region Vars
 
             public TcpClient client;
+            public Encryption _localEncryption;
 
             #endregion
 
@@ -107,7 +129,8 @@ namespace IndieGoat.Net.Tcp
             /// </summary>
             public string SendCommand(string Command, string[] args)
             {
-                SendMessage("CLNT|" + Command + " " + string.Join(" ", args));
+                string valueToSend = "CLNT|" + Command + " " + string.Join(" ", args);
+                SendMessage(_localEncryption.Encrypt(valueToSend));
                 return WaitForResult();
             }
 
@@ -117,7 +140,8 @@ namespace IndieGoat.Net.Tcp
             public void SendMessage(string Value)
             {
                 //Sends the message to the client
-                client.Client.Send(Encoding.UTF8.GetBytes(Value.Replace(" ", "%20%")));
+                string stringToSend = _localEncryption.Encrypt(Value.Replace(" ", "%20%"));
+                client.Client.Send(Encoding.UTF8.GetBytes(stringToSend));
             }
             #endregion
 
