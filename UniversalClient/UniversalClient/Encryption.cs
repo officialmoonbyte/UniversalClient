@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,101 +10,131 @@ namespace Indiegoat.Encryption
 {
     public class Encryption
     {
-        private static string _PrivateKey;
-        private static string _PublicKey;
-        private static UnicodeEncoding _Encoder = new UnicodeEncoding();
+        // This constant is used to determine the keysize of the encryption algorithm in bits.
+        // We divide this by 8 within the code below to get the equivalent number of bytes.
+        private const int Keysize = 256;
+
+        // This constant determines the number of iterations for the password bytes generation function.
+        private const int DerivationIterations = 1000;
+
+        private string Key;
+        private string ClientEncryptionKey;
+
+        public string GetKey()
+        { return Key; }
+        public string GetClientEncryptionKey()
+        { return ClientEncryptionKey; }
+
+        public void SetKey(string key)
+        { Key = key; }
+        public void SetClientKey(string key)
+        { ClientEncryptionKey = key; }
 
         public Encryption()
         {
-            var rsa = new RSACryptoServiceProvider();
-            _PrivateKey = rsa.ToXmlString(true);
-            _PublicKey = rsa.ToXmlString(false);
-
-            Console.WriteLine("Generated Private Key: " + _PrivateKey);
-            Console.WriteLine("Generated Public Key: " + _PublicKey);
+            Key = RandomString(512);
+            ClientEncryptionKey = RandomString(1024);
         }
 
-        // Sets the public key for the server.
-        public string GetPublicKey()
-        { Console.WriteLine("Public key was readed."); return _PublicKey; }
-        public void SetPublicKey(string xmlString)
-        { Console.WriteLine("Public key was changed to " + xmlString); _PublicKey = xmlString; }
-
-        //Sets the private key for the client
-        public string GetPrivateKey()
-        { Console.WriteLine("Private key was readed."); return _PrivateKey; }
-        public void SetPrivateKey(string xmlString)
-        { Console.WriteLine("Private key was changed to " + xmlString); _PrivateKey = xmlString; }
-
-        public string Encrypt(string inputString)
+        private static Random random = new Random();
+        private static string RandomString(int length)
         {
-            int dwKeySize = 1024;
-            // TODO: Add Proper Exception Handlers
-            RSACryptoServiceProvider rsaCryptoServiceProvider = new RSACryptoServiceProvider(dwKeySize);
-            rsaCryptoServiceProvider.FromXmlString(_PublicKey);
-            int keySize = dwKeySize / 8;
-            byte[] bytes = Encoding.UTF32.GetBytes(inputString);
-            // The hash function in use by the .NET RSACryptoServiceProvider here 
-            // is SHA1
-            // int maxLength = ( keySize ) - 2 - 
-            //              ( 2 * SHA1.Create().ComputeHash( rawBytes ).Length );
-            int maxLength = keySize - 42;
-            int dataLength = bytes.Length;
-            int iterations = dataLength / maxLength;
-            StringBuilder stringBuilder = new StringBuilder();
-            for (int i = 0; i <= iterations; i++)
-            {
-                byte[] tempBytes = new byte[(dataLength - maxLength * i > maxLength) ? maxLength : dataLength - maxLength * i];
-                Buffer.BlockCopy(bytes, maxLength * i, tempBytes, 0, tempBytes.Length);
-                byte[] encryptedBytes = rsaCryptoServiceProvider.Encrypt(tempBytes,
-                                                                          false);
-                // Be aware the RSACryptoServiceProvider reverses the order of 
-                // encrypted bytes. It does this after encryption and before 
-                // decryption. If you do not require compatibility with Microsoft 
-                // Cryptographic API (CAPI) and/or other vendors. Comment out the 
-                // next line and the corresponding one in the DecryptString function.
-                Array.Reverse(encryptedBytes);
-                // Why convert to base 64?
-                // Because it is the largest power-of-two base printable using only 
-                // ASCII characters
-                stringBuilder.Append(Convert.ToBase64String(encryptedBytes));
-            }
-            return stringBuilder.ToString();
+            const string chars = @"qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM1234567890!@#$%^&*()_-=+[{]}\;:',<.>/?`~";
+            return new string(Enumerable.Repeat(chars, length)
+              .Select(s => s[random.Next(s.Length)]).ToArray());
         }
 
-        public string Decrypt(string inputString)
+        public string Encrypt(string plainText, bool UseClientKey = false)
         {
-            try
+            // Salt and IV is randomly generated each time, but is preprended to encrypted cipher text
+            // so that the same Salt and IV values can be used when decrypting.  
+            var saltStringBytes = Generate256BitsOfRandomEntropy();
+            var ivStringBytes = Generate256BitsOfRandomEntropy();
+            var plainTextBytes = Encoding.UTF8.GetBytes(plainText);
+
+            string methodKey = null;
+            if (UseClientKey) { methodKey = GetClientEncryptionKey(); } else { methodKey = GetKey(); }
+
+            using (var password = new Rfc2898DeriveBytes(methodKey, saltStringBytes, DerivationIterations))
             {
-                int dwKeySize = 1024;
-                // TODO: Add Proper Exception Handlers
-                RSACryptoServiceProvider rsaCryptoServiceProvider = new RSACryptoServiceProvider(dwKeySize);
-                rsaCryptoServiceProvider.FromXmlString(_PrivateKey);
-                int base64BlockSize = ((dwKeySize / 8) % 3 != 0) ?
-                  (((dwKeySize / 8) / 3) * 4) + 4 : ((dwKeySize / 8) / 3) * 4;
-                int iterations = inputString.Length / base64BlockSize;
-                ArrayList arrayList = new ArrayList();
-                for (int i = 0; i < iterations; i++)
+                var keyBytes = password.GetBytes(Keysize / 8);
+                using (var symmetricKey = new RijndaelManaged())
                 {
-                    byte[] encryptedBytes = Convert.FromBase64String(
-                         inputString.Substring(base64BlockSize * i, base64BlockSize));
-                    // Be aware the RSACryptoServiceProvider reverses the order of 
-                    // encrypted bytes after encryption and before decryption.
-                    // If you do not require compatibility with Microsoft Cryptographic 
-                    // API (CAPI) and/or other vendors.
-                    // Comment out the next line and the corresponding one in the 
-                    // EncryptString function.
-                    Array.Reverse(encryptedBytes);
-                    arrayList.AddRange(rsaCryptoServiceProvider.Decrypt(
-                                        encryptedBytes, false));
+                    symmetricKey.BlockSize = 256;
+                    symmetricKey.Mode = CipherMode.CBC;
+                    symmetricKey.Padding = PaddingMode.PKCS7;
+                    using (var encryptor = symmetricKey.CreateEncryptor(keyBytes, ivStringBytes))
+                    {
+                        using (var memoryStream = new MemoryStream())
+                        {
+                            using (var cryptoStream = new CryptoStream(memoryStream, encryptor, CryptoStreamMode.Write))
+                            {
+                                cryptoStream.Write(plainTextBytes, 0, plainTextBytes.Length);
+                                cryptoStream.FlushFinalBlock();
+                                // Create the final bytes as a concatenation of the random salt bytes, the random iv bytes and the cipher bytes.
+                                var cipherTextBytes = saltStringBytes;
+                                cipherTextBytes = cipherTextBytes.Concat(ivStringBytes).ToArray();
+                                cipherTextBytes = cipherTextBytes.Concat(memoryStream.ToArray()).ToArray();
+                                memoryStream.Close();
+                                cryptoStream.Close();
+                                return Convert.ToBase64String(cipherTextBytes);
+                            }
+                        }
+                    }
                 }
-                return Encoding.UTF32.GetString(arrayList.ToArray(Type.GetType("System.Byte")) as byte[]);
             }
-            catch (Exception e)
+        }
+
+        public string Decrypt(string cipherText, bool UseClientKey = false)
+        {
+            // Get the complete stream of bytes that represent:
+            // [32 bytes of Salt] + [32 bytes of IV] + [n bytes of CipherText]
+            var cipherTextBytesWithSaltAndIv = Convert.FromBase64String(cipherText);
+            // Get the saltbytes by extracting the first 32 bytes from the supplied cipherText bytes.
+            var saltStringBytes = cipherTextBytesWithSaltAndIv.Take(Keysize / 8).ToArray();
+            // Get the IV bytes by extracting the next 32 bytes from the supplied cipherText bytes.
+            var ivStringBytes = cipherTextBytesWithSaltAndIv.Skip(Keysize / 8).Take(Keysize / 8).ToArray();
+            // Get the actual cipher text bytes by removing the first 64 bytes from the cipherText string.
+            var cipherTextBytes = cipherTextBytesWithSaltAndIv.Skip((Keysize / 8) * 2).Take(cipherTextBytesWithSaltAndIv.Length - ((Keysize / 8) * 2)).ToArray();
+
+            string methodKey = null;
+            if (UseClientKey) { methodKey = GetClientEncryptionKey(); } else { methodKey = GetKey(); }
+
+            using (var password = new Rfc2898DeriveBytes(methodKey, saltStringBytes, DerivationIterations))
             {
-                Console.WriteLine(e.Message);
+                var keyBytes = password.GetBytes(Keysize / 8);
+                using (var symmetricKey = new RijndaelManaged())
+                {
+                    symmetricKey.BlockSize = 256;
+                    symmetricKey.Mode = CipherMode.CBC;
+                    symmetricKey.Padding = PaddingMode.PKCS7;
+                    using (var decryptor = symmetricKey.CreateDecryptor(keyBytes, ivStringBytes))
+                    {
+                        using (var memoryStream = new MemoryStream(cipherTextBytes))
+                        {
+                            using (var cryptoStream = new CryptoStream(memoryStream, decryptor, CryptoStreamMode.Read))
+                            {
+                                var plainTextBytes = new byte[cipherTextBytes.Length];
+                                var decryptedByteCount = cryptoStream.Read(plainTextBytes, 0, plainTextBytes.Length);
+                                memoryStream.Close();
+                                cryptoStream.Close();
+                                return Encoding.UTF8.GetString(plainTextBytes, 0, decryptedByteCount);
+                            }
+                        }
+                    }
+                }
             }
-            return null;
+        }
+
+        private static byte[] Generate256BitsOfRandomEntropy()
+        {
+            var randomBytes = new byte[32]; // 32 Bytes will give us 256 bits.
+            using (var rngCsp = new RNGCryptoServiceProvider())
+            {
+                // Fill the array with cryptographically secure random bytes.
+                rngCsp.GetBytes(randomBytes);
+            }
+            return randomBytes;
         }
     }
 }
