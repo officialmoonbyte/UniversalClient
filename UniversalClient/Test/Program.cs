@@ -12,8 +12,8 @@ namespace Test
         static void Main(string[] args)
         {
             UniversalClient client = new UniversalClient();
-            client.ConnectToRemoteServer(new UniversalConnectionObject("localhost", 7777));
-            client.ClientSender.SendMessage("testmessage");
+            client.ConnectToRemoteServer("localhost", 7777);
+            client.ClientSender.SendMessage("test");
             Console.Read();
         }
     }
