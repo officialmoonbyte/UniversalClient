@@ -1,4 +1,5 @@
 ﻿
+using IndieGoat.Cryptography.UniversalTCPEncryption;
 using System;
 using System.Net;
 using System.Net.Sockets;
@@ -32,6 +33,7 @@ namespace IndieGoat.Net.Tcp
             { try { if (Client.Connected) { return true; }
                 else { return false; } } catch { return false; } }}
         public prvClientSender ClientSender;
+        public Encryption encryption;
 
         #endregion
 
@@ -69,12 +71,35 @@ namespace IndieGoat.Net.Tcp
         /// </summary>
         public void ConnectToRemoteServer(UniversalConnectionObject serverObject)
         {
+            encryption = new Encryption(false);
+
             //Checks if client is null then connect to the server
             if (Client == null) Console.WriteLine("[UniversalClient] TCP Client is currently set to null!");
             Client.Connect(serverObject.IP, serverObject.port);
 
             //Sets the client sender tcp client
             ClientSender.client = Client;
+
+            ClientSender.SendMessage("READYYY", encryption, false);
+
+            string ServerPublicKey = ClientSender.WaitForResult(encryption, false);
+            encryption.SetServerPublicKey(ServerPublicKey);
+
+            string EncryptedPublicKey = encryption.Encrypt(encryption.GetClientPublicKey(), encryption.GetServerPublicKey());
+            string EncryptedPrivateKey = encryption.Encrypt(encryption.GetClientPrivateKey(), encryption.GetServerPublicKey());
+
+            ClientSender.SendMessage(EncryptedPublicKey, encryption, false);
+
+            ClientSender.WaitForResult(encryption, false); //Gets the ready command
+
+            ClientSender.SendMessage(EncryptedPrivateKey, encryption, false);
+
+            string RawServerPrivateKey = ClientSender.WaitForResult(encryption, false);
+            string ServerPrivateKey = encryption.Decrypt(RawServerPrivateKey, encryption.GetClientPrivateKey());
+            encryption.SetServerPrivateKey(ServerPrivateKey);
+
+            ClientSender.SendMessage("READY", encryption, false);
+            ClientSender.WaitForResult(encryption, false); //Gets the ready command
         }
 
         #endregion
@@ -106,27 +131,36 @@ namespace IndieGoat.Net.Tcp
             /// <summary>
             /// Sends a message to the server with formating for a command
             /// </summary>
-            public string SendCommand(string Command, string[] args)
+            public string SendCommand(string Command, Encryption encryption, string[] args)
             {
                 string valueToSend = "CLNT|" + Command + " " + string.Join(" ", args);
-                SendMessage(valueToSend);
-                return WaitForResult();
+                SendMessage(valueToSend, encryption);
+                return WaitForResult(encryption);
             }
 
             /// <summary>
             /// Sends a message to the server without formating for a command
             /// </summary>
-            public void SendMessage(string Value)
+            public void SendMessage(string Value, Encryption encryption, bool UseEncryption = true)
             {
                 //Sends the message to the client
                 string stringToSend = Value.Replace(" ", "%20%");
+                if (UseEncryption) stringToSend = encryption.Encrypt(stringToSend, encryption.GetClientPrivateKey());
+                Console.WriteLine("Sending " + stringToSend);
                 byte[] BytesToSend = Encoding.UTF8.GetBytes(stringToSend);
                 client.Client.BeginSend(BytesToSend, 0, BytesToSend.Length, 0, new AsyncCallback(SendCallBack), client);
             }
 
             private void SendCallBack(IAsyncResult ar)
             {
-                Console.WriteLine("Data sent sucessfully!");
+                if (ar.IsCompleted)
+                {
+                    Console.WriteLine("Data sent sucessfully!");
+                }
+                else
+                {
+                    Console.WriteLine("Data was not sucessfully!");
+                }
             }
 
             #endregion
@@ -137,14 +171,19 @@ namespace IndieGoat.Net.Tcp
             /// Wait for the server to respond
             /// </summary>
             /// <returns>the string the server responds with</returns>
-            public string WaitForResult()
+            public string WaitForResult(Encryption encryption, bool UseEncryption = true)
             {
                 Console.WriteLine("Receiving Server Data! Please wait...");
                 byte[] data = new byte[client.Client.ReceiveBufferSize];
                 int receivedDataLength = client.Client.Receive(data);
                 string stringData = Encoding.ASCII.GetString(data, 0, receivedDataLength);
                 Console.WriteLine("Server response: " + stringData);
-                return stringData.Replace("%20%", " ");
+                string Final = stringData.Replace("%20%", " ");
+                if (UseEncryption)
+                {
+                    Final = encryption.Decrypt(Final, encryption.GetClientPrivateKey());
+                }
+                return Final;
             }
 
             #endregion
