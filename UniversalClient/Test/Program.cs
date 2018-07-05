@@ -13,7 +13,7 @@ namespace Test
         {
             UniversalClient client = new UniversalClient();
             client.ConnectToRemoteServer("localhost", 7777);
-            client.ClientSender.SendCommand("test", client.encryption, new string[] { "test" });
+            client.ClientSender.SendCommand("test", new string[] { "test" });
             Console.Read();
         }
     }
