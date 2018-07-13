@@ -3,7 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace Test
 {
@@ -11,9 +13,10 @@ namespace Test
     {
         static void Main(string[] args)
         {
+
             UniversalClient client = new UniversalClient();
             client.ConnectToRemoteServer("localhost", 7777);
-            client.ClientSender.SendCommand("test", new string[] { "test" });
+            Console.WriteLine("Response : " + client.ClientSender.SendCommand("userdatabase", new string[] { "adduser", "braydel", "ritter"}));
             Console.Read();
         }
     }
