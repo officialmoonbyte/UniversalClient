@@ -135,7 +135,13 @@ namespace IndieGoat.Net.Tcp
             /// </summary>
             public string SendCommand(string Command, string[] args)
             {
-                string valueToSend = "CLNT|" + Command + " " + string.Join(" ", args);
+                for(int i = 0; i < args.Length; i++)
+                {
+                    args[i] = args[i].Replace(" ", "%40%");
+                }
+                string ArgsSend = string.Join(" ", args);
+                Console.WriteLine("Args Send : " + ArgsSend);
+                string valueToSend = "CLNT|" + Command + " " + ArgsSend;
                 SendMessage(valueToSend);
                 return WaitForResult();
             }
