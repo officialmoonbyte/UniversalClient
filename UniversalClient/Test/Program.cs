@@ -13,10 +13,11 @@ namespace Test
     {
         static void Main(string[] args)
         {
-            string Command = "ServerModifier";
+            string Command = "getTime";
+            string[] Args = new string[] { "yyyyMMddHHmmss" };
             UniversalClient client = new UniversalClient();
             client.ConnectToRemoteServer("localhost", 7777);
-            Console.WriteLine("Response : " + client.ClientSender.SendCommand(Command, new string[] { "CREATESERVER", "Test User", "Test Server" }));
+            Console.WriteLine("Response : " + client.ClientSender.SendCommand(Command, Args ));
             Console.Read();
         }
     }
