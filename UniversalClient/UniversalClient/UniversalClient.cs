@@ -34,6 +34,7 @@ namespace IndieGoat.Net.Tcp
                 else { return false; } } catch { return false; } }}
         public prvClientSender ClientSender;
         public Encryption encryption;
+        public static bool LogEvents;
 
         #endregion
 
@@ -42,8 +43,9 @@ namespace IndieGoat.Net.Tcp
         /// <summary>
         /// Initializes all of the local vars
         /// </summary>
-        public UniversalClient()
+        public UniversalClient(bool logEvents = true)
         {
+            LogEvents = logEvents;
             Client = new TcpClient();
             ClientSender = new prvClientSender();
         }
@@ -75,7 +77,7 @@ namespace IndieGoat.Net.Tcp
             ClientSender.encryption = encryption;
 
             //Checks if client is null then connect to the server
-            if (Client == null) Console.WriteLine("[UniversalClient] TCP Client is currently set to null!");
+            if (Client == null) { if (LogEvents) Console.WriteLine("[UniversalClient] TCP Client is currently set to null!"); }
             Client.Connect(serverObject.IP, serverObject.port);
 
             //Sets the client sender tcp client
@@ -140,7 +142,7 @@ namespace IndieGoat.Net.Tcp
                     args[i] = args[i].Replace(" ", "%40%");
                 }
                 string ArgsSend = string.Join(" ", args);
-                Console.WriteLine("Args Send : " + ArgsSend);
+                if (LogEvents) Console.WriteLine("Args Send : " + ArgsSend);
                 string valueToSend = "CLNT|" + Command + " " + ArgsSend;
                 SendMessage(valueToSend);
                 return WaitForResult();
@@ -154,7 +156,7 @@ namespace IndieGoat.Net.Tcp
                 //Sends the message to the client
                 string stringToSend = Value.Replace(" ", "%20%");
                 if (UseEncryption) stringToSend = encryption.Encrypt(stringToSend, encryption.GetClientPrivateKey());
-                Console.WriteLine("Sending " + stringToSend);
+                if (LogEvents) Console.WriteLine("Sending " + stringToSend);
                 byte[] BytesToSend = Encoding.UTF8.GetBytes(stringToSend);
                 client.Client.BeginSend(BytesToSend, 0, BytesToSend.Length, 0, new AsyncCallback(SendCallBack), client);
             }
@@ -163,11 +165,11 @@ namespace IndieGoat.Net.Tcp
             {
                 if (ar.IsCompleted)
                 {
-                    Console.WriteLine("Data sent sucessfully!");
+                    if (LogEvents) Console.WriteLine("Data sent sucessfully!");
                 }
                 else
                 {
-                    Console.WriteLine("Data was not sucessfully!");
+                    if (LogEvents) Console.WriteLine("Data was not sucessfully!");
                 }
             }
 
@@ -181,11 +183,11 @@ namespace IndieGoat.Net.Tcp
             /// <returns>the string the server responds with</returns>
             public string WaitForResult(bool UseEncryption = true)
             {
-                Console.WriteLine("Receiving Server Data! Please wait...");
+                if (LogEvents) Console.WriteLine("Receiving Server Data! Please wait...");
                 byte[] data = new byte[client.Client.ReceiveBufferSize];
                 int receivedDataLength = client.Client.Receive(data);
                 string stringData = Encoding.ASCII.GetString(data, 0, receivedDataLength);
-                Console.WriteLine("Server response: " + stringData);
+                if (LogEvents) Console.WriteLine("Server response: " + stringData);
                 string Final = stringData.Replace("%20%", " ");
                 if (UseEncryption)
                 {
