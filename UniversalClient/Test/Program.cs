@@ -15,7 +15,7 @@ namespace Test
         {
             string Command = "getTime";
             string[] Args = new string[] { "yyyyMMddHHmmss" };
-            UniversalClient client = new UniversalClient();
+            universalClient client = new universalClient();
             client.ConnectToRemoteServer("localhost", 7777);
             Console.WriteLine("Response : " + client.ClientSender.SendCommand(Command, Args ));
             Console.Read();

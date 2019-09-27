@@ -23,7 +23,7 @@ namespace IndieGoat.Net.Tcp
     /// <summary>
     /// A TCP client used to connect to Universal Server
     /// </summary>
-    public class UniversalClient
+    public class universalClient
     {
 
         #region Vars
@@ -43,7 +43,7 @@ namespace IndieGoat.Net.Tcp
         /// <summary>
         /// Initializes all of the local vars
         /// </summary>
-        public UniversalClient(bool logEvents = true)
+        public universalClient(bool logEvents = true)
         {
             LogEvents = logEvents;
             Client = new TcpClient();
